@@ -1,36 +1,80 @@
-import json
-import os
 from datetime import datetime
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-
-DATA_FILE = "historico_gastos.json"
-RENDAS_FILE = "historico_rendas.json"
-
-
-def carregar_dados(arquivo):
-  if os.path.exists(arquivo):
-    with open(arquivo, "r", encoding="utf-8") as f:
-      return json.load(f)
-  return []
-
-
-def salvar_dados(dados, arquivo):
-  with open(arquivo, "w", encoding="utf-8") as f:
-    json.dump(dados, f, ensure_ascii=False, indent=4)
-
+from sqlalchemy import create_engine
 
 st.set_page_config(page_title="Controle de Gastos - Casal", layout="wide")
 
 st.title("💰 Controle Financeiro Inteligente do Casal")
 
-# Inicializar dados
+# --- CONEXÃO COM O SUPABASE (BANCO DE DADOS NA NUVEM) ---
+try:
+  db_url = st.secrets["DB_URL"]
+  engine = create_engine(db_url)
+except Exception as e:
+  st.error(
+      "Erro de configuração: Verifique se a variável 'DB_URL' foi adicionada"
+      " nos Secrets do Streamlit Cloud."
+  )
+  st.stop()
+
+
+# --- FUNÇÕES DE BANCO DE DADOS ---
+def carregar_gastos():
+  try:
+    df = pd.read_sql("SELECT * FROM gastos", engine)
+    if not df.empty:
+      # Converte o DataFrame do banco para o formato de lista de dicionários que o app usa
+      return df.to_dict(orient="records")
+    return []
+  except Exception:
+    # Se a tabela não existir ainda, retorna lista vazia
+    return []
+
+
+def carregar_rendas():
+  try:
+    df = pd.read_sql("SELECT * FROM rendas", engine)
+    if not df.empty:
+      return df.to_dict(orient="records")
+    return []
+  except Exception:
+    return []
+
+
+# Criar tabelas automaticamente se não existirem
+with engine.begin() as conn:
+  conn.execute(
+      __import__("sqlalchemy").text("""
+        CREATE TABLE IF NOT EXISTS gastos (
+            id TEXT PRIMARY KEY,
+            mes TEXT,
+            responsavel TEXT,
+            categoria TEXT,
+            valor NUMERIC,
+            descricao TEXT,
+            data TEXT
+        );
+    """)
+  )
+  conn.execute(
+      __import__("sqlalchemy").text("""
+        CREATE TABLE IF NOT EXISTS rendas (
+            mes TEXT PRIMARY KEY,
+            marido NUMERIC,
+            esposa NUMERIC
+        );
+    """)
+  )
+
+
+# Inicializar dados do banco na sessão
 if "historico" not in st.session_state:
-  st.session_state.historico = carregar_dados(DATA_FILE)
+  st.session_state.historico = carregar_gastos()
 
 if "rendas" not in st.session_state:
-  st.session_state.rendas = carregar_dados(RENDAS_FILE)
+  st.session_state.rendas = carregar_rendas()
 
 mes_atual = datetime.now().strftime("%Y-%m")
 
@@ -51,10 +95,7 @@ if "categorias" not in st.session_state:
 
 nova_categoria = st.sidebar.text_input("Adicionar Nova Categoria de Gasto")
 if st.sidebar.button("Cadastrar Categoria"):
-  if (
-      nova_categoria
-      and nova_categoria not in st.session_state.categorias
-  ):
+  if nova_categoria and nova_categoria not in st.session_state.categorias:
     st.session_state.categorias.append(nova_categoria)
     st.sidebar.success(f"Categoria '{nova_categoria}' adicionada!")
     st.rerun()
@@ -74,15 +115,24 @@ renda_esposa = st.sidebar.number_input(
 )
 
 if st.sidebar.button("Salvar Rendas do Mês"):
-  # Atualiza ou adiciona a renda do mês selecionado
-  st.session_state.rendas = [
-      r for r in st.session_state.rendas if r["mes"] != mes_renda
-  ]
-  st.session_state.rendas.append(
-      {"mes": mes_renda, "marido": renda_marido, "esposa": renda_esposa}
+  df_renda_novo = pd.DataFrame(
+      [{"mes": mes_renda, "marido": renda_marido, "esposa": renda_esposa}]
   )
-  salvar_dados(st.session_state.rendas, RENDAS_FILE)
-  st.sidebar.success("Rendas salvas com sucesso!")
+
+  # Salva no Supabase (atualiza se já existir o mês)
+  with engine.begin() as conn:
+    conn.execute(
+        __import__("sqlalchemy").text(
+            "DELETE FROM rendas WHERE mes = :mes_val"
+        ),
+        {"mes_val": mes_renda},
+    )
+  df_renda_novo.to_sql(
+      "rendas", engine, if_exists="append", index=False, method="multi"
+  )
+
+  st.session_state.rendas = carregar_rendas()
+  st.sidebar.success("Rendas salvas com sucesso no banco!")
   st.rerun()
 
 st.sidebar.divider()
@@ -112,15 +162,18 @@ if st.sidebar.button("Adicionar Gasto"):
         "descricao": descricao,
         "data": datetime.now().strftime("%d/%m/%Y %H:%M"),
     }
-    st.session_state.historico.append(novo_registro)
-    salvar_dados(st.session_state.historico, DATA_FILE)
-    st.sidebar.success("Gasto adicionado!")
+    df_novo_gasto = pd.DataFrame([novo_registro])
+    df_novo_gasto.to_sql(
+        "gastos", engine, if_exists="append", index=False, method="multi"
+    )
+
+    st.session_state.historico = carregar_gastos()
+    st.sidebar.success("Gasto adicionado ao banco!")
     st.rerun()
   else:
     st.sidebar.error("O valor deve ser maior que zero.")
 
 # --- ÁREA PRINCIPAL ---
-# Filtro por Mês global
 meses_com_dados = list(set([h["mes"] for h in st.session_state.historico]))
 if mes_atual not in meses_com_dados:
   meses_com_dados.append(mes_atual)
@@ -148,7 +201,6 @@ col1, col2, col3 = st.columns(3)
 col1.metric("💵 Renda Total do Mês", f"R$ {total_renda:.2f}")
 col2.metric("🛒 Gastos Totais", f"R$ {total_gasto:.2f}")
 
-# Cor dinâmica do saldo (Vermelho se negativo, Verde se positivo)
 delta_color = "normal" if saldo >= 0 else "inverse"
 col3.metric(
     "📊 Saldo do Mês",
@@ -197,12 +249,15 @@ if dados_filtrados or total_renda > 0:
           format_func=lambda x: f"{df[df['id'] == x]['data'].values[0]} - {df[df['id'] == x]['categoria'].values[0]} - R$ {df[df['id'] == x]['valor'].values[0]:.2f}",
       )
       if st.button("Excluir Gasto"):
-        st.session_state.historico = [
-            h
-            for h in st.session_state.historico
-            if h["id"] != gasto_para_excluir
-        ]
-        salvar_dados(st.session_state.historico, DATA_FILE)
+        with engine.begin() as conn:
+          conn.execute(
+              __import__("sqlalchemy").text(
+                  "DELETE FROM gastos WHERE id = :id_val"
+              ),
+              {"id_val": str(gasto_para_excluir)},
+          )
+        st.session_state.historico = carregar_gastos()
+        st.success("Gasto removido com sucesso!")
         st.rerun()
     else:
       st.write("Sem lançamentos para exibir.")
@@ -235,8 +290,8 @@ if dados_filtrados or total_renda > 0:
       )
     elif percentual_gasto > 50:
       st.success(
-          f"✅ **Bom Trabalho!** Vocês gastaram {percentual_g:`:.1f`}% da renda"
-          " e terminaram o mês no azul. Continuem mantendo o controle das"
+          f"✅ **Bom Trabalho!** Vocês gastaram {percentual_gasto:.1f}% da"
+          " renda e terminaram o mês no azul. Continuem mantendo o controle das"
           " categorias principais."
       )
     else:
@@ -247,7 +302,6 @@ if dados_filtrados or total_renda > 0:
           " investimentos conjuntos ou sonhos futuros!"
       )
 
-    # Análise por categoria predominante
     if dados_filtrados:
       df_cat = df.groupby("categoria")["valor"].sum().reset_index()
       maior_gasto = df_cat.loc[df_cat["valor"].idxmax()]
