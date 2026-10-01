@@ -114,7 +114,13 @@ renda_esposa = st.sidebar.number_input(
 
 if st.sidebar.button("Salvar Rendas do Mês"):
   df_renda_novo = pd.DataFrame(
-      [{"mes": mes_renda, "marido": renda_marido, "esposa": renda_esposa}]
+      [
+          {
+              "mes": mes_renda,
+              "marido": float(renda_marido),
+              "esposa": float(renda_esposa),
+          }
+      ]
   )
 
   with engine.begin() as conn:
@@ -153,7 +159,7 @@ if st.sidebar.button("Adicionar Gasto"):
         "mes": mes_gasto,
         "responsavel": responsavel,
         "categoria": categoria_escolhida,
-        "valor": valor_gasto,
+        "valor": float(valor_gasto),  # Convertido explicitamente para float
         "descricao": descricao,
         "data": datetime.now().strftime("%d/%m/%Y %H:%M"),
     }
