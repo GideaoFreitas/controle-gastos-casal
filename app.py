@@ -1,31 +1,48 @@
 from datetime import datetime
 import pandas as pd
-import plotly.express as px
 import streamlit as st
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
-st.set_page_config(page_title="Controle de Gastos - Casal", layout="wide")
-
-st.title("💰 Controle Financeiro Inteligente do Casal")
-
-import streamlit as st
-from sqlalchemy import create_engine
-
-# --- CONEXÃO COM O SUPABASE (BANCO DE DADOS NA NUVEM) ---
+# --- CONEXÃO COM O SUPABASE ---
 try:
-    db_url = st.secrets["DB_URL"]
-    
-    # Ajusta a URL para garantir o uso do driver psycopg2
-    if db_url.startswith("postgres://"):
-        db_url = db_url.replace("postgres://", "postgresql+psycopg2://", 1)
-    elif db_url.startswith("postgresql://"):
-        db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
-        
-    engine = create_engine(db_url)
-    
+  db_url = st.secrets["DB_URL"]
+  if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql+psycopg2://", 1)
+  elif db_url.startswith("postgresql://"):
+    db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+
+  engine = create_engine(db_url)
 except Exception as e:
-    st.error(f"Erro detalhado de conexão: {e}")
-    st.stop()
+  st.error(f"Erro de configuração do banco: {e}")
+  st.stop()
+
+
+# --- FUNÇÃO PARA CARREGAR OS GASTOS ---
+def carregar_gastos():
+  try:
+    # Tenta ler a tabela do banco
+    df = pd.read_sql("SELECT * FROM gastos", engine)
+    return df
+  except Exception as e:
+    # Se a tabela 'gastos' ainda não existe no Supabase, criamos ela vazia automaticamente!
+    df_vazio = pd.DataFrame(
+        columns=[
+            "id",
+            "mes",
+            "responsavel",
+            "categoria",
+            "valor",
+            "descricao",
+            "data",
+        ]
+    )
+    df_vazio.to_sql("gastos", engine, if_exists="replace", index=False)
+    return df_vazio
+
+
+# Carrega o histórico ao iniciar o app (garanta que isso existe logo abaixo da função)
+if "historico" not in st.session_state:
+  st.session_state.historico = carregar_gastos()
 # --- FUNÇÕES DE BANCO DE DADOS ---
 def carregar_gastos():
   try:
