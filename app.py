@@ -8,16 +8,24 @@ st.set_page_config(page_title="Controle de Gastos - Casal", layout="wide")
 
 st.title("💰 Controle Financeiro Inteligente do Casal")
 
+import streamlit as st
+from sqlalchemy import create_engine
+
+# --- CONEXÃO COM O SUPABASE (BANCO DE DADOS NA NUVEM) ---
 try:
-   db_url = st.secrets["DB_URL"]
-
-# Se a URL começar com postgres://, mudamos para postgresql+psycopg2://
-if db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql+psycopg2://", 1)
-elif db_url.startswith("postgresql://"):
-    db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
-
-engine = create_engine(db_url)
+    db_url = st.secrets["DB_URL"]
+    
+    # Ajusta a URL para garantir o uso do driver psycopg2
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql+psycopg2://", 1)
+    elif db_url.startswith("postgresql://"):
+        db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+        
+    engine = create_engine(db_url)
+    
+except Exception as e:
+    st.error(f"Erro detalhado de conexão: {e}")
+    st.stop()
 # --- FUNÇÕES DE BANCO DE DADOS ---
 def carregar_gastos():
   try:
