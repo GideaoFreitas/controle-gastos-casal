@@ -8,17 +8,13 @@ st.set_page_config(page_title="Controle de Gastos - Casal", layout="wide")
 
 st.title("💰 Controle Financeiro Inteligente do Casal")
 
-# --- CONEXÃO COM O SUPABASE (BANCO DE DADOS NA NUVEM) ---
 try:
-  db_url = st.secrets["DB_URL"]
-  engine = create_engine(db_url)
+    db_url = st.secrets["DB_URL"]
+    engine = create_engine(db_url)
 except Exception as e:
-  st.error(
-      "Erro de configuração: Verifique se a variável 'DB_URL' foi adicionada"
-      " nos Secrets do Streamlit Cloud."
-  )
-  st.stop()
-
+    # Mostra o erro real na tela em vez da mensagem padrão
+    st.error(f"Erro detalhado: {e}")
+    st.stop()
 
 # --- FUNÇÕES DE BANCO DE DADOS ---
 def carregar_gastos():
