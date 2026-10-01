@@ -18,16 +18,12 @@ except Exception as e:
   st.stop()
 
 
-# --- GARANTIR CRIAÇÃO SEGURA DAS TABELAS ---
+# --- GARANTIR CRIAÇÃO SEGURA DAS TABELAS (SEM APAGAR DADOS) ---
 try:
   with engine.begin() as conn:
-    # Usamos DROP TABLE IF EXISTS para garantir que a estrutura antiga com ID inteiro seja limpa e recriada corretamente como TEXT
-    # (Caso prefira manter dados antigos de teste, remova a linha do DROP, mas como o banco está dando conflito de tipo, é melhor recriar)
-    conn.execute(text("DROP TABLE IF EXISTS gastos;"))
-
     conn.execute(
         text("""
-            CREATE TABLE gastos (
+            CREATE TABLE IF NOT EXISTS gastos (
                 id TEXT PRIMARY KEY,
                 mes TEXT,
                 responsavel TEXT,
@@ -113,7 +109,7 @@ st.sidebar.divider()
 # 2. Registrar Rendas Mensais
 st.sidebar.subheader("💵 Registrar Entradas (Salários)")
 mes_renda = st.sidebar.selectbox(
-    "Mês de Referência (Renda)", [mes_atual, "2026-08", "2026-07", "2026-06"]
+    "Mês de Referência (Renda)", [mes_atual, "2026-10", "2026-09", "2026-08"]
 )
 renda_marido = st.sidebar.number_input(
     "Quanto o Marido recebe (R$)", min_value=0.0, format="%.2f", key="r_marido"
@@ -149,7 +145,7 @@ st.sidebar.divider()
 # 3. Adicionar Gastos em Tempo Real
 st.sidebar.subheader("🛒 Novo Gasto")
 mes_gasto = st.sidebar.selectbox(
-    "Mês de Referência (Gasto)", [mes_atual, "2026-08", "2026-07", "2026-06"]
+    "Mês de Referência (Gasto)", [mes_atual, "2026-10", "2026-09", "2026-08"]
 )
 responsavel = st.sidebar.selectbox("Quem gastou?", ["Marido", "Esposa", "Ambos"])
 categoria_escolhida = st.sidebar.selectbox(
@@ -163,7 +159,10 @@ descricao = st.sidebar.text_input("Descrição (opcional)")
 if st.sidebar.button("Adicionar Gasto"):
   if valor_gasto > 0:
     try:
-      gasto_id = str(datetime.now().timestamp())
+      # Gerador de ID único usando timestamp atual + microsegundos para evitar repetição rápida
+      gasto_id = (
+          f"{datetime.now().timestamp()}_{datetime.now().microsecond}"
+      )
       gasto_mes = str(mes_gasto)
       gasto_resp = str(responsavel)
       gasto_cat = str(categoria_escolhida)
@@ -188,8 +187,9 @@ if st.sidebar.button("Adicionar Gasto"):
             },
         )
 
+      # Atualiza imediatamente a sessão com os dados do banco
       st.session_state.historico = carregar_gastos()
-      st.sidebar.success("Gasto adicionado ao banco!")
+      st.sidebar.success("Gasto adicionado com sucesso!")
       st.rerun()
     except Exception as e:
       st.sidebar.error(f"Erro ao inserir gasto no banco: {e}")
@@ -319,8 +319,8 @@ if dados_filtrados or total_renda > 0:
     elif percentual_gasto > 50:
       st.success(
           f"✅ **Bom Trabalho!** Vocês gastaram {percentual_gasto:.1f}% da"
-          " renda e terminaram o mês no azul. Continuem mantendo o controle das"
-          " categorias principales."
+          " renda e terminaram o azul. Continuem mantendo o controle das"
+          " categorias principais."
       )
     else:
       st.balloons()
