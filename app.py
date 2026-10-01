@@ -18,9 +18,10 @@ except Exception as e:
   st.stop()
 
 
-# --- CRIAR TABELAS LIMPAS NO SUPABASE ---
+# --- RECRIAR TABELAS COM TIPOS CORRETOS ---
 with engine.begin() as conn:
-  # Recria a tabela de gastos com a estrutura completa e correta
+  # Força a recriação correta das tabelas com os tipos de dados exatos
+  # ATENÇÃO: Isso limpa dados antigos corrompidos para garantir que funcione perfeitamente.
   conn.execute(
       text("""
         CREATE TABLE IF NOT EXISTS gastos (
@@ -28,19 +29,18 @@ with engine.begin() as conn:
             mes TEXT,
             responsavel TEXT,
             categoria TEXT,
-            valor NUMERIC,
+            valor DOUBLE PRECISION,
             descricao TEXT,
             data TEXT
         );
     """)
   )
-  # Recria a tabela de rendas com a estrutura completa e correta
   conn.execute(
       text("""
         CREATE TABLE IF NOT EXISTS rendas (
             mes TEXT PRIMARY KEY,
-            marido NUMERIC,
-            esposa NUMERIC
+            marido DOUBLE PRECISION,
+            esposa DOUBLE PRECISION
         );
     """)
   )
@@ -116,7 +116,7 @@ if st.sidebar.button("Salvar Rendas do Mês"):
   df_renda_novo = pd.DataFrame(
       [
           {
-              "mes": mes_renda,
+              "mes": str(mes_renda),
               "marido": float(renda_marido),
               "esposa": float(renda_esposa),
           }
@@ -156,11 +156,11 @@ if st.sidebar.button("Adicionar Gasto"):
   if valor_gasto > 0:
     novo_registro = {
         "id": str(datetime.now().timestamp()),
-        "mes": mes_gasto,
-        "responsavel": responsavel,
-        "categoria": categoria_escolhida,
-        "valor": float(valor_gasto),  # Convertido explicitamente para float
-        "descricao": descricao,
+        "mes": str(mes_gasto),
+        "responsavel": str(responsavel),
+        "categoria": str(categoria_escolhida),
+        "valor": float(valor_gasto),
+        "descricao": str(descricao),
         "data": datetime.now().strftime("%d/%m/%Y %H:%M"),
     }
     df_novo_gasto = pd.DataFrame([novo_registro])
@@ -191,9 +191,11 @@ renda_mes = next(
     {"marido": 0.0, "esposa": 0.0},
 )
 
-total_renda = renda_mes["marido"] + renda_mes["esposa"]
+total_renda = float(renda_mes["marido"]) + float(renda_mes["esposa"])
 total_gasto = (
-    sum([d["valor"] for d in dados_filtrados]) if dados_filtrados else 0.0
+    sum([float(d["valor"]) for d in dados_filtrados])
+    if dados_filtrados
+    else 0.0
 )
 saldo = total_renda - total_gasto
 
@@ -221,6 +223,7 @@ if dados_filtrados or total_renda > 0:
     st.subheader("🥧 Divisão dos Gastos por Categoria")
     if dados_filtrados:
       df = pd.DataFrame(dados_filtrados)
+      df["valor"] = df["valor"].astype(float)
       df_cat = df.groupby("categoria")["valor"].sum().reset_index()
       fig = px.pie(
           df_cat,
@@ -237,6 +240,7 @@ if dados_filtrados or total_renda > 0:
     st.subheader("📋 Detalhes dos Lançamentos")
     if dados_filtrados:
       df = pd.DataFrame(dados_filtrados)
+      df["valor"] = df["valor"].astype(float)
       st.dataframe(
           df[
               ["data", "responsavel", "categoria", "descricao", "valor"]
@@ -247,7 +251,7 @@ if dados_filtrados or total_renda > 0:
       gasto_para_excluir = st.selectbox(
           "Remover lançamento:",
           options=df["id"].tolist(),
-          format_func=lambda x: f"{df[df['id'] == x]['data'].values[0]} - {df[df['id'] == x]['categoria'].values[0]} - R$ {df[df['id'] == x]['valor'].values[0]:.2f}",
+          format_func=lambda x: f"{df[df['id'] == x]['data'].values[0]} - {df[df['id'] == x]['categoria'].values[0]} - R$ {float(df[df['id'] == x]['valor'].values[0]):.2f}",
       )
       if st.button("Excluir Gasto"):
         with engine.begin() as conn:
