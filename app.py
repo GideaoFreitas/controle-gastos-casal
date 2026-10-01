@@ -18,41 +18,33 @@ except Exception as e:
   st.stop()
 
 
-# --- CRIAR OU ATUALIZAR TABELAS AUTOMATICAMENTE ---
+# --- CRIAR TABELAS LIMPAS NO SUPABASE ---
 with engine.begin() as conn:
-  # Cria a tabela de gastos se não existir
+  # Recria a tabela de gastos com a estrutura completa e correta
   conn.execute(
       text("""
         CREATE TABLE IF NOT EXISTS gastos (
-            id TEXT PRIMARY KEY
+            id TEXT PRIMARY KEY,
+            mes TEXT,
+            responsavel TEXT,
+            categoria TEXT,
+            valor NUMERIC,
+            descricao TEXT,
+            data TEXT
         );
     """)
   )
-  # Garante que todas as colunas necessárias existam na tabela gastos
-  conn.execute(text("ALTER TABLE gastos ADD COLUMN IF NOT EXISTS mes TEXT;"))
-  conn.execute(
-      text("ALTER TABLE gastos ADD COLUMN IF NOT EXISTS responsavel TEXT;")
-  )
-  conn.execute(
-      text("ALTER TABLE gastos ADD COLUMN IF NOT EXISTS categoria TEXT;")
-  )
-  conn.execute(text("ALTER TABLE gastos ADD COLUMN IF NOT EXISTS valor NUMERIC;"))
-  conn.execute(
-      text("ALTER TABLE gastos ADD COLUMN IF NOT EXISTS descricao TEXT;")
-  )
-  conn.execute(text("ALTER TABLE gastos ADD COLUMN IF NOT EXISTS data TEXT;"))
-
-  # Cria a tabela de rendas se não existir
+  # Recria a tabela de rendas com a estrutura completa e correta
   conn.execute(
       text("""
         CREATE TABLE IF NOT EXISTS rendas (
-            mes TEXT PRIMARY KEY
+            mes TEXT PRIMARY KEY,
+            marido NUMERIC,
+            esposa NUMERIC
         );
     """)
   )
-  # Garante que as colunas de renda existam
-  conn.execute(text("ALTER TABLE rendas ADD COLUMN IF NOT EXISTS marido NUMERIC;"))
-  conn.execute(text("ALTER TABLE rendas ADD COLUMN IF NOT EXISTS esposa NUMERIC;"))
+
 
 # --- FUNÇÕES DE BANCO DE DADOS ---
 def carregar_gastos():
