@@ -9,13 +9,15 @@ st.set_page_config(page_title="Controle de Gastos - Casal", layout="wide")
 st.title("💰 Controle Financeiro Inteligente do Casal")
 
 try:
-    db_url = st.secrets["DB_URL"]
-    engine = create_engine(db_url)
-except Exception as e:
-    # Mostra o erro real na tela em vez da mensagem padrão
-    st.error(f"Erro detalhado: {e}")
-    st.stop()
+   db_url = st.secrets["DB_URL"]
 
+# Se a URL começar com postgres://, mudamos para postgresql+psycopg2://
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql+psycopg2://", 1)
+elif db_url.startswith("postgresql://"):
+    db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+
+engine = create_engine(db_url)
 # --- FUNÇÕES DE BANCO DE DADOS ---
 def carregar_gastos():
   try:
