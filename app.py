@@ -14,46 +14,50 @@ try:
 
   engine = create_engine(db_url)
 except Exception as e:
-  st.error(f"Erro de configuração do banco: {e}")
+  st.error(f"Erro crítico de configuração do banco de dados: {e}")
   st.stop()
 
 
-# --- RECRIAR TABELAS COM TIPOS CORRETOS ---
-with engine.begin() as conn:
-  # Força a recriação correta das tabelas com os tipos de dados exatos
-  # ATENÇÃO: Isso limpa dados antigos corrompidos para garantir que funcione perfeitamente.
-  conn.execute(
-      text("""
-        CREATE TABLE IF NOT EXISTS gastos (
-            id TEXT PRIMARY KEY,
-            mes TEXT,
-            responsavel TEXT,
-            categoria TEXT,
-            valor DOUBLE PRECISION,
-            descricao TEXT,
-            data TEXT
-        );
-    """)
-  )
-  conn.execute(
-      text("""
-        CREATE TABLE IF NOT EXISTS rendas (
-            mes TEXT PRIMARY KEY,
-            marido DOUBLE PRECISION,
-            esposa DOUBLE PRECISION
-        );
-    """)
-  )
+# --- GARANTIR CRIAÇÃO SEGURA DAS TABELAS ---
+try:
+  with engine.begin() as conn:
+    conn.execute(
+        text("""
+            CREATE TABLE IF NOT EXISTS gastos (
+                id TEXT PRIMARY KEY,
+                mes TEXT,
+                responsavel TEXT,
+                categoria TEXT,
+                valor DOUBLE PRECISION,
+                descricao TEXT,
+                data TEXT
+            );
+        """)
+    )
+    conn.execute(
+        text("""
+            CREATE TABLE IF NOT EXISTS rendas (
+                mes TEXT PRIMARY KEY,
+                marido DOUBLE PRECISION,
+                esposa DOUBLE PRECISION
+            );
+        """)
+    )
+except Exception as e:
+  st.error(f"Erro ao criar tabelas no banco de dados: {e}")
 
 
-# --- FUNÇÕES DE BANCO DE DADOS ---
+# --- FUNÇÕES DE CARREGAMENTO SEGURAS ---
 def carregar_gastos():
   try:
     df = pd.read_sql("SELECT * FROM gastos", engine)
     if not df.empty:
+      # Assegurar tipos corretos na leitura
+      df["valor"] = pd.to_numeric(df["valor"], errors="coerce").fillna(0.0)
       return df.to_dict(orient="records")
     return []
-  except Exception:
+  except Exception as e:
+    st.warning(f"Aviso ao carregar gastos: {e}")
     return []
 
 
@@ -61,9 +65,12 @@ def carregar_rendas():
   try:
     df = pd.read_sql("SELECT * FROM rendas", engine)
     if not df.empty:
+      df["marido"] = pd.to_numeric(df["marido"], errors="coerce").fillna(0.0)
+      df["esposa"] = pd.to_numeric(df["esposa"], errors="coerce").fillna(0.0)
       return df.to_dict(orient="records")
     return []
-  except Exception:
+  except Exception as e:
+    st.warning(f"Aviso ao carregar rendas: {e}")
     return []
 
 
@@ -113,28 +120,27 @@ renda_esposa = st.sidebar.number_input(
 )
 
 if st.sidebar.button("Salvar Rendas do Mês"):
-  df_renda_novo = pd.DataFrame(
-      [
+  try:
+    with engine.begin() as conn:
+      # Upsert seguro para rendas (substitui se já existir o mês)
+      conn.execute(
+          text("""
+                INSERT INTO rendas (mes, marido, esposa) 
+                VALUES (:mes, :marido, :esposa)
+                ON CONFLICT (mes) 
+                DO UPDATE SET marido = EXCLUDED.marido, esposa = EXCLUDED.esposa;
+            """),
           {
               "mes": str(mes_renda),
               "marido": float(renda_marido),
               "esposa": float(renda_esposa),
-          }
-      ]
-  )
-
-  with engine.begin() as conn:
-    conn.execute(
-        text("DELETE FROM rendas WHERE mes = :mes_val"),
-        {"mes_val": mes_renda},
-    )
-  df_renda_novo.to_sql(
-      "rendas", engine, if_exists="append", index=False, method="multi"
-  )
-
-  st.session_state.rendas = carregar_rendas()
-  st.sidebar.success("Rendas salvas com sucesso no banco!")
-  st.rerun()
+          },
+      )
+    st.session_state.rendas = carregar_rendas()
+    st.sidebar.success("Rendas salvas com sucesso no banco!")
+    st.rerun()
+  except Exception as e:
+    st.sidebar.error(f"Erro ao salvar renda: {e}")
 
 st.sidebar.divider()
 
@@ -154,23 +160,37 @@ descricao = st.sidebar.text_input("Descrição (opcional)")
 
 if st.sidebar.button("Adicionar Gasto"):
   if valor_gasto > 0:
-    novo_registro = {
-        "id": str(datetime.now().timestamp()),
-        "mes": str(mes_gasto),
-        "responsavel": str(responsavel),
-        "categoria": str(categoria_escolhida),
-        "valor": float(valor_gasto),
-        "descricao": str(descricao),
-        "data": datetime.now().strftime("%d/%m/%Y %H:%M"),
-    }
-    df_novo_gasto = pd.DataFrame([novo_registro])
-    df_novo_gasto.to_sql(
-        "gastos", engine, if_exists="append", index=False, method="multi"
-    )
+    try:
+      gasto_id = str(datetime.now().timestamp())
+      gasto_mes = str(mes_gasto)
+      gasto_resp = str(responsavel)
+      gasto_cat = str(categoria_escolhida)
+      gasto_val = float(valor_gasto)
+      gasto_desc = str(descricao) if descricao else ""
+      gasto_data = datetime.now().strftime("%d/%m/%Y %H:%M")
 
-    st.session_state.historico = carregar_gastos()
-    st.sidebar.success("Gasto adicionado ao banco!")
-    st.rerun()
+      with engine.begin() as conn:
+        conn.execute(
+            text("""
+                    INSERT INTO gastos (id, mes, responsavel, categoria, valor, descricao, data)
+                    VALUES (:id, :mes, :responsavel, :categoria, :valor, :descricao, :data)
+                """),
+            {
+                "id": gasto_id,
+                "mes": gasto_mes,
+                "responsavel": gasto_resp,
+                "categoria": gasto_cat,
+                "valor": gasto_val,
+                "descricao": gasto_desc,
+                "data": gasto_data,
+            },
+        )
+
+      st.session_state.historico = carregar_gastos()
+      st.sidebar.success("Gasto adicionado ao banco!")
+      st.rerun()
+    except Exception as e:
+      st.sidebar.error(f"Erro ao inserir gasto no banco: {e}")
   else:
     st.sidebar.error("O valor deve ser maior que zero.")
 
@@ -223,7 +243,7 @@ if dados_filtrados or total_renda > 0:
     st.subheader("🥧 Divisão dos Gastos por Categoria")
     if dados_filtrados:
       df = pd.DataFrame(dados_filtrados)
-      df["valor"] = df["valor"].astype(float)
+      df["valor"] = pd.to_numeric(df["valor"], errors="coerce").fillna(0.0)
       df_cat = df.groupby("categoria")["valor"].sum().reset_index()
       fig = px.pie(
           df_cat,
@@ -240,7 +260,7 @@ if dados_filtrados or total_renda > 0:
     st.subheader("📋 Detalhes dos Lançamentos")
     if dados_filtrados:
       df = pd.DataFrame(dados_filtrados)
-      df["valor"] = df["valor"].astype(float)
+      df["valor"] = pd.to_numeric(df["valor"], errors="coerce").fillna(0.0)
       st.dataframe(
           df[
               ["data", "responsavel", "categoria", "descricao", "valor"]
@@ -254,14 +274,17 @@ if dados_filtrados or total_renda > 0:
           format_func=lambda x: f"{df[df['id'] == x]['data'].values[0]} - {df[df['id'] == x]['categoria'].values[0]} - R$ {float(df[df['id'] == x]['valor'].values[0]):.2f}",
       )
       if st.button("Excluir Gasto"):
-        with engine.begin() as conn:
-          conn.execute(
-              text("DELETE FROM gastos WHERE id = :id_val"),
-              {"id_val": str(gasto_para_excluir)},
-          )
-        st.session_state.historico = carregar_gastos()
-        st.success("Gasto removido com sucesso!")
-        st.rerun()
+        try:
+          with engine.begin() as conn:
+            conn.execute(
+                text("DELETE FROM gastos WHERE id = :id_val"),
+                {"id_val": str(gasto_para_excluir)},
+            )
+          st.session_state.historico = carregar_gastos()
+          st.success("Gasto removido com sucesso!")
+          st.rerun()
+        except Exception as e:
+          st.error(f"Erro ao excluir gasto: {e}")
     else:
       st.write("Sem lançamentos para exibir.")
 
@@ -307,13 +330,14 @@ if dados_filtrados or total_renda > 0:
 
     if dados_filtrados:
       df_cat = df.groupby("categoria")["valor"].sum().reset_index()
-      maior_gasto = df_cat.loc[df_cat["valor"].idxmax()]
-      st.info(
-          f"🔍 **Curiosidade do mês:** A categoria que mais pesou no orçamento"
-          f" foi **{maior_gasto['categoria']}**, totalizando R$"
-          f" {maior_gasto['valor']:.2f} ({(maior_gasto['valor']/total_renda)*100:.1f}%"
-          " da renda)."
-      )
+      if not df_cat.empty:
+        maior_gasto = df_cat.loc[df_cat["valor"].idxmax()]
+        st.info(
+            f"🔍 **Curiosidade do mês:** A categoria que mais pesou no orçamento"
+            f" foi **{maior_gasto['categoria']}**, totalizando R$"
+            f" {maior_gasto['valor']:.2f} ({(maior_gasto['valor']/total_renda)*100:.1f}%"
+            " da renda)."
+        )
 
 else:
   st.info(
