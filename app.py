@@ -21,9 +21,13 @@ except Exception as e:
 # --- GARANTIR CRIAÇÃO SEGURA DAS TABELAS ---
 try:
   with engine.begin() as conn:
+    # Usamos DROP TABLE IF EXISTS para garantir que a estrutura antiga com ID inteiro seja limpa e recriada corretamente como TEXT
+    # (Caso prefira manter dados antigos de teste, remova a linha do DROP, mas como o banco está dando conflito de tipo, é melhor recriar)
+    conn.execute(text("DROP TABLE IF EXISTS gastos;"))
+
     conn.execute(
         text("""
-            CREATE TABLE IF NOT EXISTS gastos (
+            CREATE TABLE gastos (
                 id TEXT PRIMARY KEY,
                 mes TEXT,
                 responsavel TEXT,
@@ -52,7 +56,6 @@ def carregar_gastos():
   try:
     df = pd.read_sql("SELECT * FROM gastos", engine)
     if not df.empty:
-      # Assegurar tipos corretos na leitura
       df["valor"] = pd.to_numeric(df["valor"], errors="coerce").fillna(0.0)
       return df.to_dict(orient="records")
     return []
@@ -122,7 +125,6 @@ renda_esposa = st.sidebar.number_input(
 if st.sidebar.button("Salvar Rendas do Mês"):
   try:
     with engine.begin() as conn:
-      # Upsert seguro para rendas (substitui se já existir o mês)
       conn.execute(
           text("""
                 INSERT INTO rendas (mes, marido, esposa) 
@@ -318,7 +320,7 @@ if dados_filtrados or total_renda > 0:
       st.success(
           f"✅ **Bom Trabalho!** Vocês gastaram {percentual_gasto:.1f}% da"
           " renda e terminaram o mês no azul. Continuem mantendo o controle das"
-          " categorias principais."
+          " categorias principales."
       )
     else:
       st.balloons()
