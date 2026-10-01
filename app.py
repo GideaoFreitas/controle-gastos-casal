@@ -1,5 +1,6 @@
 from datetime import datetime
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 from sqlalchemy import create_engine, text
 
@@ -17,59 +18,10 @@ except Exception as e:
   st.stop()
 
 
-# --- FUNÇÃO PARA CARREGAR OS GASTOS ---
-def carregar_gastos():
-  try:
-    # Tenta ler a tabela do banco
-    df = pd.read_sql("SELECT * FROM gastos", engine)
-    return df
-  except Exception as e:
-    # Se a tabela 'gastos' ainda não existe no Supabase, criamos ela vazia automaticamente!
-    df_vazio = pd.DataFrame(
-        columns=[
-            "id",
-            "mes",
-            "responsavel",
-            "categoria",
-            "valor",
-            "descricao",
-            "data",
-        ]
-    )
-    df_vazio.to_sql("gastos", engine, if_exists="replace", index=False)
-    return df_vazio
-
-
-# Carrega o histórico ao iniciar o app (garanta que isso existe logo abaixo da função)
-if "historico" not in st.session_state:
-  st.session_state.historico = carregar_gastos()
-# --- FUNÇÕES DE BANCO DE DADOS ---
-def carregar_gastos():
-  try:
-    df = pd.read_sql("SELECT * FROM gastos", engine)
-    if not df.empty:
-      # Converte o DataFrame do banco para o formato de lista de dicionários que o app usa
-      return df.to_dict(orient="records")
-    return []
-  except Exception:
-    # Se a tabela não existir ainda, retorna lista vazia
-    return []
-
-
-def carregar_rendas():
-  try:
-    df = pd.read_sql("SELECT * FROM rendas", engine)
-    if not df.empty:
-      return df.to_dict(orient="records")
-    return []
-  except Exception:
-    return []
-
-
-# Criar tabelas automaticamente se não existirem
+# --- CRIAR TABELAS AUTOMATICAMENTE SE NÃO EXISTIREM ---
 with engine.begin() as conn:
   conn.execute(
-      __import__("sqlalchemy").text("""
+      text("""
         CREATE TABLE IF NOT EXISTS gastos (
             id TEXT PRIMARY KEY,
             mes TEXT,
@@ -82,7 +34,7 @@ with engine.begin() as conn:
     """)
   )
   conn.execute(
-      __import__("sqlalchemy").text("""
+      text("""
         CREATE TABLE IF NOT EXISTS rendas (
             mes TEXT PRIMARY KEY,
             marido NUMERIC,
@@ -90,6 +42,27 @@ with engine.begin() as conn:
         );
     """)
   )
+
+
+# --- FUNÇÕES DE BANCO DE DADOS ---
+def carregar_gastos():
+  try:
+    df = pd.read_sql("SELECT * FROM gastos", engine)
+    if not df.empty:
+      return df.to_dict(orient="records")
+    return []
+  except Exception:
+    return []
+
+
+def carregar_rendas():
+  try:
+    df = pd.read_sql("SELECT * FROM rendas", engine)
+    if not df.empty:
+      return df.to_dict(orient="records")
+    return []
+  except Exception:
+    return []
 
 
 # Inicializar dados do banco na sessão
@@ -142,12 +115,9 @@ if st.sidebar.button("Salvar Rendas do Mês"):
       [{"mes": mes_renda, "marido": renda_marido, "esposa": renda_esposa}]
   )
 
-  # Salva no Supabase (atualiza se já existir o mês)
   with engine.begin() as conn:
     conn.execute(
-        __import__("sqlalchemy").text(
-            "DELETE FROM rendas WHERE mes = :mes_val"
-        ),
+        text("DELETE FROM rendas WHERE mes = :mes_val"),
         {"mes_val": mes_renda},
     )
   df_renda_novo.to_sql(
@@ -274,9 +244,7 @@ if dados_filtrados or total_renda > 0:
       if st.button("Excluir Gasto"):
         with engine.begin() as conn:
           conn.execute(
-              __import__("sqlalchemy").text(
-                  "DELETE FROM gastos WHERE id = :id_val"
-              ),
+              text("DELETE FROM gastos WHERE id = :id_val"),
               {"id_val": str(gasto_para_excluir)},
           )
         st.session_state.historico = carregar_gastos()
